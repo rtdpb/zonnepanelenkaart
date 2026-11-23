@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#142824">
+  <title>Zonnepanelenkaart Nederland</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="kaart.css">
+</head>
+<body>
+<svg class="symbolen" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-zoek" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.4"/><path d="m16 16 4.7 4.7"/></symbol>
+  <symbol id="i-tel" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m6 0h6v-6"/><path d="m9 8 7-1-1 9-7 1z"/></symbol>
+  <symbol id="i-lagen" viewBox="0 0 24 24"><path d="m3 9 9-5 9 5-9 5zM4 13l8 4.5 8-4.5M4 17l8 4 8-4"/></symbol>
+  <symbol id="i-wereld" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4.5" ry="9"/><path d="M3.4 9h17.2M3.4 15h17.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M19.2 10c0 5.4-7.2 11.2-7.2 11.2S4.8 15.4 4.8 10a7.2 7.2 0 1 1 14.4 0Z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-9v.2"/></symbol>
+</svg>
+<header class="masthead">
+  <div class="brandmark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <h1>Zonnepanelenkaart</h1>
+  <button class="info" id="info" type="button" aria-label="Over de kaart en de telling" title="Over de kaart en de telling"><svg class="icon"><use href="#i-info"/></svg></button>
+</header>
+<section class="search-panel" aria-label="Zoeken op de kaart">
+  <form id="searchForm" role="search" autocomplete="off">
+    <label for="search">Zoek een locatie</label>
+    <div class="search-box"><input id="search" type="search" placeholder="Adres, plaats of GPS" aria-controls="results" aria-expanded="false" aria-autocomplete="list" role="combobox" spellcheck="false"><button aria-label="Zoeken" title="Zoeken" type="submit"><svg class="icon"><use href="#i-zoek"/></svg></button></div>
+    <div class="search-pop" id="searchPop" hidden><div id="results" role="listbox" aria-label="Zoekresultaten"></div><span id="searchMsg" role="status"></span></div>
+  </form>
+</section>
+<main class="map-shell" aria-label="Interactieve luchtfoto van Nederland">
+  <div id="map" aria-label="Luchtfoto. Sleep om de kaart te verplaatsen en gebruik plus of min om te zoomen."></div>
+  <div class="layer-label"><svg class="icon"><use href="#i-lagen"/></svg>Luchtfoto</div>
+  <div class="map-buttons">
+    <div class="button-stack"><button id="zoomIn" type="button" aria-label="Inzoomen" title="Inzoomen"><svg class="icon"><use href="#i-plus"/></svg></button><button id="zoomOut" type="button" aria-label="Uitzoomen" title="Uitzoomen"><svg class="icon"><use href="#i-min"/></svg></button></div>
+    <button id="home" type="button" aria-label="Heel Nederland tonen" title="Heel Nederland tonen"><svg class="icon"><use href="#i-wereld"/></svg></button>
+  </div>
+  <div class="tile-alert" id="tileAlert" hidden role="status">De luchtfoto laden is mislukt. <button id="retryTiles" type="button">Opnieuw laden</button></div>
+</main>
+<aside class="count-panel" aria-labelledby="countHeading">
+  <h2 id="countHeading">Zichtbaar gebied</h2>
+  <div class="readout"><output id="total" aria-live="off">—</output><span id="unit">panelen</span></div>
+  <p id="status" role="status" aria-live="polite">Zoom in op een straat of zoek een adres.</p>
+  <progress id="progress" max="1" value="0" aria-label="Voortgang van de telling" hidden></progress>
+  <button id="count" type="button" class="primary" disabled><svg class="icon"><use href="#i-tel"/></svg><span>Tel panelen hier</span></button>
+  <div class="options">
+    <button id="example" type="button" class="link-button"><svg class="icon"><use href="#i-pin"/></svg>Bekijk een voorbeelddak</button>
+    <button id="correct" type="button" class="link-button" hidden>Vakjes aanpassen</button>
+  </div>
+  <div id="tools" class="edit-tools" hidden>
+    <div class="tool-row"><button id="add" type="button">Toevoegen</button><button id="remove" type="button">Verwijderen</button><button id="finish" type="button">Klaar</button></div>
+    <p id="editHint"></p>
+  </div>
+</aside>
+<footer class="rail-footer"><span class="foot-label">Kaartcentrum</span><span id="coords"></span></footer>
+<dialog id="about">
+  <div class="dialog-head"><h2>Over de telling</h2><button id="closeAbout" type="button">Sluiten</button></div>
+  <p>De kaart gebruikt de actuele Nederlandse luchtfoto. Zoek een adres of voer GPS-coördinaten in, bijvoorbeeld <span class="nowrap">52.0780, 4.2757</span>. Zoom in tot straatniveau en druk op <strong>Tel panelen hier</strong>.</p>
+  <p>De herkenner zoekt zonne-installaties. Daarna plaatst hij een vakje per vermoedelijk paneel op basis van beeldranden, richting en afmetingen. Een paneel telt mee wanneer het midden binnen de kaart ligt. Schaduw, spiegeling en slecht zichtbare naden kunnen de uitkomst beïnvloeden.</p>
+  <p>De herkenning draait in je browser. De kaart haalt luchtfoto’s en zoekresultaten via internet op bij PDOK.</p>
+  <p class="sources">Luchtfoto © Samenwerkingsverband Beeldmateriaal, via <a href="https://www.pdok.nl/introductie/-/article/pdok-luchtfoto-rgb-open-" target="_blank" rel="noreferrer">PDOK</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>). Satellietachtergrond © NASA Earth Observatory, via NASA GIBS. Zonnepaneelmodel van <a href="https://huggingface.co/Muemmel/solar-pv-segmentation-brandenburg" target="_blank" rel="noreferrer">Muemmel</a> (CC BY 4.0), met compact opgeslagen gewichten. <a href="model/LICENTIE.txt" target="_blank" rel="noreferrer">Modelverantwoording</a>.</p>
+</dialog>
+<script src="vendor/leaflet.js"></script>
+<script src="paneelvormen.js"></script>
+<script src="herkenner.js"></script>
+<script src="kaart.js"></script>
+</body></html>

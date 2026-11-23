@@ -1,0 +1,16 @@
+Solar PV Segmentation on German Orthophotos (Brandenburg DOP)
+Muemmel, regnety_rgb_s44, best_timm-regnety_080_ch3_ep090.onnx
+https://huggingface.co/Muemmel/solar-pv-segmentation-brandenburg/tree/55651f5
+
+De modelgewichten zijn beschikbaar onder Creative Commons Naamsvermelding 4.0 Internationaal.
+https://creativecommons.org/licenses/by/4.0/
+
+Voor deze kaart zijn de convolutiegewichten per uitvoerkanaal als 8-bits gehele getallen opgeslagen. Het ONNX-model rekent met 32-bits drijvendekommagetallen. Het model en de uitvoeromgeving zijn voor lokale levering met gzip gecomprimeerd en met Base64 gecodeerd.
+
+Oorspronkelijke trainingsbeelden © GeoBasis-DE/LGB (2021–2024), dl-de/by-2-0, Daten geändert.
+https://www.govdata.de/dl-de/by-2-0
+Het bijbehorende onderzoek heet Validation of Photovoltaic Data in the German Core Energy Market Register via Aerial Image Segmentation, Hochschule Harz, 2026.
+https://doi.org/10.5281/zenodo.22715506
+
+De meegeleverde ONNX Runtime Web 1.17.3 is van Microsoft, onder de MIT-licentie.
+Zie ../vendor/ort-LICENSE.txt en ../vendor/ort-ThirdPartyNotices.txt.
