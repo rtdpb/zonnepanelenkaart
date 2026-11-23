@@ -60,13 +60,17 @@
   <div class="dialog-head"><h2>Over de telling</h2><button id="closeAbout" type="button">Sluiten</button></div>
   <p>De kaart gebruikt de actuele Nederlandse luchtfoto. Zoek een adres of voer GPS-coördinaten in, bijvoorbeeld <span class="nowrap">52.0780, 4.2757</span>. Zoom in tot straatniveau en druk op <strong>Tel panelen hier</strong>.</p>
   <p>De scan verdeelt het kaartbeeld in overlappende deelgebieden en haalt voor elk deel de meest gedetailleerde PDOK-luchtfoto op. De herkenner bekijkt de daken op meerdere schalen en tekent een vakje per vermoedelijk paneel. Een paneel telt één keer mee als het midden binnen het kaartbeeld ligt. Schaduw, spiegeling en onduidelijke naden kunnen de telling beïnvloeden.</p>
-  <p>De herkenning draait in je browser. De kaart haalt luchtfoto’s en zoekresultaten via internet op bij PDOK.</p>
+  <p>Op de startlocatie zijn gemelde paneelvelden ook bekeken op luchtfoto’s uit eerdere jaren. Bij een gestippeld groen vakje is de indeling geschat. Een oranje omlijnd paneelveld heeft te weinig zichtbare naden voor een telling. De kaart gebruikt deze controles zolang de bijbehorende luchtfototegels overeenkomen.</p>
+  <p>De herkenning draait in je browser. Met de <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1" target="_blank" rel="noreferrer">Basisregistratie Grootschalige Topografie</a> controleert de kaart of een vakje op een rijbaan, gebouw of overkapping ligt. Zo kan de scan wegmarkeringen uitsluiten. PDOK levert ook de luchtfoto’s en zoekresultaten.</p>
   <p class="sources">Luchtfoto © Samenwerkingsverband Beeldmateriaal, via <a href="https://www.pdok.nl/introductie/-/article/pdok-luchtfoto-rgb-open-" target="_blank" rel="noreferrer">PDOK</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>). Satellietachtergrond © NASA Earth Observatory, via NASA GIBS. Zonnepaneelmodel van <a href="https://huggingface.co/Muemmel/solar-pv-segmentation-brandenburg" target="_blank" rel="noreferrer">Muemmel</a> (CC BY 4.0), met compact opgeslagen gewichten. <a href="model/LICENTIE.txt" target="_blank" rel="noreferrer">Modelverantwoording</a>.</p>
 </dialog>
 <script src="vendor/leaflet.js"></script>
-<script src="deelscan.js?v=2"></script>
+<script src="deelscan.js?v=3"></script>
 <script src="paneelvormen.js"></script>
-<script src="paneelrijen.js?v=2"></script>
+<script src="paneelrijen.js?v=3"></script>
 <script src="herkenner.js?v=2"></script>
-<script src="kaart.js?v=3"></script>
+<script src="topografie.js?v=1"></script>
+<script src="dakvlakken.js?v=1"></script>
+<script src="dakcontrole.js?v=1"></script>
+<script src="kaart.js?v=4"></script>
 </body></html>

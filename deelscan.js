@@ -42,7 +42,7 @@ const deelscan = (() => {
     const world = p => [p[0]+block.left,p[1]+block.top];
     const [x,y] = box.center;
     const edge = Math.min(x,y,size-x,size-y);
-    return {center:world(box.center), points:box.points.map(world),
+    return {center:world(box.center), points:box.points.map(world), ...(box.roofOnly && {roofOnly:true}),
       score:box.score*(.85+.15*Math.min(1,edge/(margin+overlap)))};
   }
 

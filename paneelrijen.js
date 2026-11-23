@@ -10,17 +10,30 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
     blue[q]=(pixels[p+2]+pixels[p+6]+pixels[p+row+2]+pixels[p+row+6])/4;
   }
   const tint=new Float32Array(length), bright=new Float32Array(length);
+  const toneMap=new Float32Array(length), darkGlass=new Uint8Array(length);
   for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++){
     const i=y*w+x;
     const blur=arr=>(4*arr[i]+2*(arr[i-1]+arr[i+1]+arr[i-w]+arr[i+w])+
       arr[i-w-1]+arr[i-w+1]+arr[i+w-1]+arr[i+w+1])/16;
     const r=blur(red),g=blur(green),b=blur(blue);
+    toneMap[i]=.30*r+.59*g+.11*b;
     if (b>=g && g>=r-3 && b<211 && r>27 && b-r<75) tint[i]=b-r;
     if (Math.abs(b-r)<24 && Math.abs(g-r)<15) bright[i]=.30*r+.59*g+.11*b;
   }
+  for(let y=3;y<h-3;y++) for(let x=3;x<w-3;x++){
+    const i=y*w+x, value=toneMap[i];
+    if(value<28 || value>105 || green[i]-red[i]>26 || green[i]-blue[i]>19 ||
+      red[i]-blue[i]>17 || blue[i]-red[i]>40)continue;
+    // Smooth glass against the fine repeating relief of roof tiles.
+    let sum=0, square=0;
+    for(let j=-2;j<=2;j+=2)for(let k=-2;k<=2;k+=2){
+      const v=toneMap[i+j*w+k];sum+=v;square+=v*v;
+    }
+    if(square/9-(sum/9)**2<35)darkGlass[i]=255-Math.round(value);
+  }
 
   const mask=new Uint8Array(length), dilated=new Uint8Array(length), queue=new Int32Array(length);
-  function closedMask(field,threshold) {
+  function closedMask(field,threshold,open=false) {
     dilated.fill(0); mask.fill(0);
     for(let i=w+1;i<length-w-1;i++) if(field[i]>=threshold) {
       for(let dy=-w;dy<=w;dy+=w) {
@@ -30,6 +43,15 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
     for(let i=w+1;i<length-w-1;i++) {
       mask[i]=dilated[i] && dilated[i-1] && dilated[i+1] && dilated[i-w] && dilated[i+w] &&
         dilated[i-w-1] && dilated[i-w+1] && dilated[i+w-1] && dilated[i+w+1];
+    }
+    if(open){
+      dilated.fill(0);
+      for(let i=w+1;i<length-w-1;i++) if(mask[i-1] && mask[i+1] && mask[i-w] && mask[i+w] &&
+        mask[i] && mask[i-w-1] && mask[i-w+1] && mask[i+w-1] && mask[i+w+1])dilated[i]=1;
+      mask.fill(0);
+      for(let i=w+1;i<length-w-1;i++) if(dilated[i]) {
+        for(let dy=-w;dy<=w;dy+=w)mask[i+dy-1]=mask[i+dy]=mask[i+dy+1]=1;
+      }
     }
   }
   const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
@@ -115,7 +137,10 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
     }
     mean/=n; hue/=n; pv/=255*n;
     const deviation=Math.sqrt(Math.max(0,square/n-mean*mean));
-    if(rect.silver) {
+    if(rect.dark || rect.glare){
+      if(Math.abs(hue)>25 || sides[1]<10 ||
+        (rect.dark ? mean>106 || deviation>12 : mean<148 || deviation>15))return null;
+    } else if(rect.silver) {
       if(mean<160 || Math.abs(hue)>21 || deviation>21) return null;
       // Inclined, reflective strings show a strip of shadow along a long side.
       let shadow=false;
@@ -193,6 +218,7 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
     for(let cols=1;cols<=Math.floor(wide/.70);cols++) for(let rows=1;rows<=Math.floor(high/.70);rows++){
       if(cols*rows<3 || cols*rows>220)continue;
       if(rect.silver && (rows!==1 || cols<3))continue;
+      if(rect.glare && (cols<2 || rows<2))continue;
       const a=wide/cols,c=high/rows,short=Math.min(a,c),long=Math.max(a,c);
       if(short<.70||short>1.29||long<1.15||long>2.17||long/short<1.12||long/short>2.65||a*c<1.03||a*c>2.53)continue;
       const xx=seams(vlines,cols), yy=seams(hlines,rows), total=cols+rows-2;
@@ -204,7 +230,13 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
       if(!best || merit>best.merit)best={cols,rows,merit,contrast,hit,prior};
     }
     if(!best || best.contrast<.4 || best.hit<.4) return null;
-    if(rect.silver) {
+    if(rect.dark || rect.glare) {
+      if(rect.fill<.85 || best.prior<.35 || best.hit<.74 ||
+        best.contrast<(rect.dark?1.15:2.5))return null;
+      // A dark roof or shadow can be rectangular too. Without independent
+      // model support, require dividers that stand out against the glass texture.
+      if(rect.dark && pv<.16 && best.contrast<3)return null;
+    } else if(rect.silver) {
       if(best.contrast<2.4 || best.hit<.63 || best.prior<.27) return null;
     } else if(pv<.22 && (best.contrast<1.05||best.hit<.58||rect.fill<.80||sides[1]<10)) return null;
     if(Math.max(best.cols,best.rows)<3 && pv<.43 && nearby.length<2) return null;
@@ -218,18 +250,21 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
         const i=yy*W+xx;cellChroma+=chroma[i];cellTone+=tone[i];inside++;
       }
       cellChroma/=inside;cellTone/=inside;
-      if(rect.silver ? Math.abs(cellTone-mean)>22 || Math.abs(cellChroma-hue)>13 :
+      if(rect.dark || rect.glare || rect.silver ? Math.abs(cellTone-mean)>20 || Math.abs(cellChroma-hue)>13 :
         cellChroma<Math.max(4,.34*hue) || (cellTone>mean+23 && cellChroma<.73*hue))continue;
       boxes.push({center,points:[world(u+inset,v+inset),world(u+cw-inset,v+inset),
-        world(u+cw-inset,v+ch-inset),world(u+inset,v+ch-inset)],score:55+quality});
+        world(u+cw-inset,v+ch-inset),world(u+inset,v+ch-inset)],
+        score:(rect.dark || rect.glare ? 2 : 55)+quality,...((rect.dark || rect.glare) && {roofOnly:true})});
     }
     const [cx,cy]=world((l+r)/2,(t+b)/2);
-    return {boxes,quality,cx,cy,cs,sn,wide:r-l,high:b-t,cols:best.cols,rows:best.rows,hue,mean,silver:rect.silver};
+    return {boxes,quality,cx,cy,cs,sn,wide:r-l,high:b-t,cols:best.cols,rows:best.rows,hue,mean,
+      silver:rect.silver,roofOnly:rect.dark || rect.glare};
   }
   const candidates=[];
-  for(const threshold of [7,12,18,26,168,180,192]) {
-    const silver=threshold>100;
-    closedMask(silver?bright:tint,threshold);
+  const passes=[[tint,[7,12,18,26]],[bright,[168,180,192],"silver"],
+    [darkGlass,[255-62,255-74,255-88,255-100],"dark"],[bright,[150,164,181],"glare"]];
+  for(const [field,thresholds,kind] of passes)for(const threshold of thresholds) {
+    closedMask(field,threshold,kind==="dark");
     for(let p=w+1;p<length-w-1;p++) {
       if(!mask[p])continue;
       let n=1,yMin=h,yMax=0,xMin=w,xMax=0; queue[0]=p;mask[p]=0;
@@ -244,7 +279,7 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
       if(surface<2.25||surface>270||xMin<2||yMin<2||xMax>w-3||yMax>h-3)continue;
       const rect=rectangle(n,yMin,yMax);
       if(!rect||rect.fill<.77||rect.high*metres<.69||rect.high*metres>13||rect.wide*metres>35)continue;
-      rect.silver=silver;
+      if(kind)rect[kind]=true;
       const group=fit(rect);
       if(group?.boxes.length)candidates.push(group);
     }
@@ -256,8 +291,9 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
       return Math.abs(other.cs*dx+other.sn*dy)<other.wide*.48 && Math.abs(-other.sn*dx+other.cs*dy)<other.high*.48;
     });
   }
-  for(const group of candidates.sort((a,b)=>b.quality-a.quality)){
-    if(!alreadyFound(group))chosen.push(group);
+  candidates.sort((a,b)=>b.quality-a.quality);
+  for(const group of candidates){
+    if(!group.roofOnly && !alreadyFound(group))chosen.push(group);
   }
   // Parallel strings can touch a blue gutter in the colour mask. A confirmed
   // neighbouring string supplies a size to search for; each new row must still
@@ -314,6 +350,9 @@ function zoekPaneelrijen({pixels,width,height,probability,metres,bounds}, anchor
       return along<.65*group.wide/group.cols && across>.84*group.high && across<5.5*group.high;
     });
   }
-  return chosen.filter(group=>!group.silver || hasParallelString(group)).flatMap(group=>group.boxes);
+  const supported=chosen.filter(group=>!group.silver || hasParallelString(group));
+  chosen.length=0;chosen.push(...supported);
+  for(const group of candidates)if(group.roofOnly && !alreadyFound(group))chosen.push(group);
+  return chosen.flatMap(group=>group.boxes);
 }
 if (typeof module!=="undefined" && module.exports) module.exports=zoekPaneelrijen;

@@ -2,6 +2,7 @@
   "use strict";
   const $=id=>document.getElementById(id);
   const dataZoom=deelscan.zoom, minScanZoom=18, limit=96;
+  const dakcontrole=maakDakcontrole(gecontroleerdeDaken);
   const country=L.latLngBounds([[50.74,3.3],[53.57,7.24]]);
   const coverage=L.latLngBounds([[50.68,3.01],[53.67,7.37]]);
   const map=L.map("map",{zoomControl:false,attributionControl:false,minZoom:6,maxZoom:24,zoomSnap:.25,zoomDelta:1,
@@ -91,7 +92,7 @@
     }
     return hit;
   }
-  let job=null,serial=0,last=null,visible=[],animation=null,frameId=0;
+  let job=null,serial=0,last=null,visible=[],visibleFields=[],animation=null,frameId=0;
   let edit="",corners=[],editsAdded=[],editsRemoved=[],lastError="";
   const tileCache=new Map();
   const blockCache=new Map();
@@ -121,11 +122,17 @@
       ctx.restore();
     }
     if(!job&&covered(last?.bounds,v)){
-      const n=animation?animation.n:visible.length,path=new Path2D(),hot=new Path2D();
-      for(let i=0;i<n;i++)outline(animation&&i===n-1?hot:path,visible[i].points);
+      const n=animation?animation.n:visible.length,path=new Path2D(),estimate=new Path2D(),hot=new Path2D();
+      const uncertain=new Path2D();
+      for(const f of visibleFields)outline(uncertain,f.points);
+      ctx.save();ctx.fillStyle="rgba(255,194,83,.14)";ctx.fill(uncertain);
+      ctx.strokeStyle="#ffc253";ctx.lineWidth=2;ctx.setLineDash([7,4]);ctx.stroke(uncertain);ctx.restore();
+      for(let i=0;i<n;i++)outline(animation&&i===n-1?hot:visible[i].estimated?estimate:path,visible[i].points);
       ctx.lineJoin="round";ctx.fillStyle="rgba(69,250,184,.10)";ctx.fill(path);
       ctx.strokeStyle="rgba(11,42,29,.95)";ctx.lineWidth=3.0;ctx.stroke(path);
       ctx.strokeStyle="#71ffbd";ctx.lineWidth=1.65;ctx.stroke(path);
+      ctx.save();ctx.fill(estimate);ctx.strokeStyle="#12382d";ctx.lineWidth=3;ctx.stroke(estimate);
+      ctx.strokeStyle="#9dffd9";ctx.lineWidth=1.75;ctx.setLineDash([4,3]);ctx.stroke(estimate);ctx.restore();
       if(animation){ctx.fillStyle="rgba(255,199,69,.21)";ctx.fill(hot);ctx.strokeStyle="#4d3916";ctx.lineWidth=3.9;ctx.stroke(hot);ctx.strokeStyle="#ffcd60";ctx.lineWidth=2.4;ctx.stroke(hot);}
     }
     if(corners.length){
@@ -153,14 +160,22 @@
     $("zoomIn").disabled=z>=map.getMaxZoom();$("zoomOut").disabled=z<=map.getMinZoom();
     const center=map.getCenter();$("coords").textContent=center.lat.toFixed(5)+"° N   "+center.lng.toFixed(5)+"° E";
     if(!job){
-      visible=currentResults(v);showTotal(seen?(animation?animation.n:visible.length):null);
+      visible=currentResults(v);visibleFields=seen?dakcontrole.visibleFields(last.unresolved,v):[];
+      showTotal(seen?(animation?animation.n:visible.length):null);
       if(!seen&&edit)finishEdit();
       let msg=lastError;
       if(!msg&&seen){
         if(animation)msg="De vakjes verschijnen van links naar rechts.";
         else if(last.partial)msg="Schatting voor het deel met luchtfotodekking.";
-        else if(!visible.length)msg="Geen panelen herkend in dit kaartbeeld.";
+        else if(!visible.length)msg=visibleFields.length?"Geen afzonderlijke panelen geteld.":"Geen panelen herkend in dit kaartbeeld.";
         else msg="Schatting voor dit kaartbeeld. Controleer de groene vakjes.";
+        const estimates=visible.filter(p=>p.estimated).length;
+        if(!animation && estimates){
+          const note=estimates+(estimates===1?" gestippeld vakje telt":" gestippelde vakjes tellen")+" mee als schatting.";
+          msg=last.partial?msg+" "+note:note;
+        }
+        if(!animation && visibleFields.length)msg+=visibleFields.length===1?" Op het oranje dakvlak is het aantal onbekend.":" Op de oranje dakvlakken is het aantal onbekend.";
+        if(!animation && !last.roadsChecked)msg+=" De controle op wegmarkeringen is niet beschikbaar.";
       }
       if(!msg)msg=!ready?(z<15?"Zoom in op een straat of zoek een adres.":"Zoom verder in om afzonderlijke panelen te tellen."):"Druk op de knop om de daken in dit kaartbeeld te tellen.";
       $("status").textContent=msg;
@@ -197,6 +212,7 @@
         const r=await fetch(tileUrl(z,x,y),{signal:timer.signal,credentials:"omit"});
         if(!r.ok)throw new Error("PDOK antwoordde met "+r.status+".");
         const blob=await r.blob();
+        await dakcontrole.recordTile(key,blob);
         const bmp=await createImageBitmap(blob);
         if(signal.aborted){bmp.close();throw new DOMException("Afgebroken","AbortError");}
         tileCache.set(key,bmp);
@@ -263,6 +279,7 @@
       $("progress").value=(index+fraction)/plan.count;
     }
     try {
+      const terrain=topografie.load(bounds,signal);
       for (const block of deelscan.blocks(plan)) {
         signal.throwIfAborted();
         j.block=block; requestDrawing();
@@ -295,7 +312,16 @@
       }
       signal.throwIfAborted();
       if (!sampled || valid/sampled<.007) throw new Error("PDOK heeft hier geen bruikbare luchtfoto. Kies een plek binnen Nederland.");
-      last={bounds,partial:valid/sampled<.96,panels:deelscan.merge(boxes)};
+      const terrainData=await terrain;
+      signal.throwIfAborted();
+      await Promise.all(dakcontrole.missing(bounds).map(async key=>{
+        const [z,x,y]=key.split("/").map(Number);
+        try {await tileBitmap(z,x,y,signal);}catch {signal.throwIfAborted();}
+      }));
+      signal.throwIfAborted();
+      const reviewed=dakcontrole.apply(boxes.filter(box=>topografie.retain(box,terrainData)),bounds);
+      last={bounds,partial:valid/sampled<.96,roadsChecked:!!(terrainData.roads && terrainData.buildings && terrainData.canopies),
+        panels:deelscan.merge(reviewed.panels),unresolved:reviewed.unresolved};
       job=null; visible=currentResults(bounds); animateResult();
     } catch (error) {
       if (job!==j) return;
