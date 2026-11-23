@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const $=id=>document.getElementById(id);
-  const dataZoom=20, core=208, halo=24, limit=42;
+  const dataZoom=deelscan.zoom, minScanZoom=18, limit=96;
   const country=L.latLngBounds([[50.74,3.3],[53.57,7.24]]);
   const coverage=L.latLngBounds([[50.68,3.01],[53.67,7.37]]);
   const map=L.map("map",{zoomControl:false,attributionControl:false,minZoom:6,maxZoom:24,zoomSnap:.25,zoomDelta:1,
@@ -33,7 +33,7 @@
       pic.src=this.getTileUrl(c);return tile;
     }
   });
-  const aerial=new Aerial("",{minZoom:9,maxZoom:24,maxNativeZoom:21,bounds:coverage,noWrap:true,crossOrigin:"anonymous",
+  const aerial=new Aerial("",{minZoom:9,maxZoom:24,maxNativeZoom:dataZoom,bounds:coverage,noWrap:true,crossOrigin:"anonymous",
     updateWhenIdle:true,keepBuffer:1});
   let mapErrors=0,mapLoaded=0;
   aerial.on("loading",()=>{mapErrors=0;mapLoaded=0;});
@@ -60,7 +60,18 @@
     if(z<9)$("tileAlert").hidden=true;
   }
   function home(){map.fitBounds(country,{padding:[24,24],maxZoom:8,animate:false});}
-  home();layerState();
+  function openMap(){
+    const shared=new URLSearchParams(location.hash.slice(1)).get("kaart");
+    const point=shared?.match(/^(\d{1,2}(?:\.\d+)?)\/([+-]?\d+(?:\.\d+)?)\/([+-]?\d+(?:\.\d+)?)$/);
+    if(point){
+      const zoom=Number(point[1]), center=[Number(point[2]),Number(point[3])];
+      if(zoom>=map.getMinZoom() && zoom<=map.getMaxZoom() && coverage.contains(center)){
+        map.setView(center,zoom,{animate:false});return;
+      }
+    }
+    home();
+  }
+  openMap();layerState();
   $("home").onclick=home;$("zoomIn").onclick=()=>map.zoomIn();$("zoomOut").onclick=()=>map.zoomOut();
   const paper=document.createElement("canvas");paper.id="vakjes";paper.setAttribute("aria-hidden","true");
   Object.assign(paper.style,{position:"absolute",inset:"0",width:"100%",height:"100%",zIndex:425,pointerEvents:"none"});
@@ -70,13 +81,6 @@
     const b=map.project(map.containerPointToLatLng(size),dataZoom);
     return [a.x,a.y,b.x,b.y];
   };
-  function plan(v){
-    const stride=2*core,padding=32;
-    const gx=Math.floor((v[0]-padding)/stride),gy=Math.floor((v[1]-padding)/stride);
-    const nx=Math.ceil((v[2]+padding)/stride)-gx,ny=Math.ceil((v[3]+padding)/stride)-gy;
-    return {gridX:gx,gridY:gy,nx,ny,left:gx*stride-2*halo,top:gy*stride-2*halo,
-      width:nx*stride+4*halo,height:ny*stride+4*halo};
-  }
   const covered=(outer,inner)=>outer&&inner[0]>=outer[0]-.06&&inner[1]>=outer[1]-.06&&inner[2]<=outer[2]+.06&&inner[3]<=outer[3]+.06;
   const inView=(q,v)=>q[0]>=v[0]&&q[1]>=v[1]&&q[0]<v[2]&&q[1]<v[3];
   function contains(shape,x,y){
@@ -90,6 +94,7 @@
   let job=null,serial=0,last=null,visible=[],animation=null,frameId=0;
   let edit="",corners=[],editsAdded=[],editsRemoved=[],lastError="";
   const tileCache=new Map();
+  const blockCache=new Map();
   function showTotal(n){$("total").value=n==null?"—":n.toLocaleString("nl-NL");$("unit").textContent=n===1?"paneel":"panelen";}
   function finishEdit(){
     edit="";corners=[];$("tools").hidden=true;
@@ -105,6 +110,15 @@
     const screen=point=>[(point[0]-v[0])*scale,(point[1]-v[1])*scale];
     function outline(path,pts){
       pts.forEach((q,i)=>{const [x,y]=screen(q);if(i)path.lineTo(x,y);else path.moveTo(x,y);});path.closePath();
+    }
+    if(job?.block){
+      const block=job.block;
+      const [x,y]=screen([block.left+deelscan.margin,block.top+deelscan.margin]);
+      const side=deelscan.core*scale;
+      ctx.save();
+      ctx.fillStyle="rgba(255,205,96,.08)"; ctx.fillRect(x,y,side,side);
+      ctx.strokeStyle="#ffcd60"; ctx.lineWidth=2; ctx.setLineDash([8,5]); ctx.strokeRect(x,y,side,side);
+      ctx.restore();
     }
     if(!job&&covered(last?.bounds,v)){
       const n=animation?animation.n:visible.length,path=new Path2D(),hot=new Path2D();
@@ -127,13 +141,13 @@
     return automatic.concat(editsAdded.filter(p=>inView(p.center,v))).sort((a,b)=>a.center[0]-b.center[0]||a.center[1]-b.center[1]);
   }
   function updateUI(){
-    const v=view(),z=map.getZoom(),p=plan(v);
-    const ready=z>=18.99 && p.nx*p.ny<=limit;
+    const v=view(),z=map.getZoom(),p=deelscan.plan(v);
+    const ready=z>=minScanZoom && p.count<=limit;
     const seen=covered(last?.bounds,v);
     const count=$("count");
     count.querySelector("span").textContent=job?"Annuleren":"Tel panelen hier";
     count.classList.toggle("busy",!!job);count.disabled=!job&&!ready;
-    $("example").hidden=!!job||seen||z>=18.99;
+    $("example").hidden=!!job||seen||ready;
     $("correct").hidden=!!job||!seen||!!edit||!!animation;
     $("progress").hidden=!job;
     $("zoomIn").disabled=z>=map.getMaxZoom();$("zoomOut").disabled=z<=map.getMinZoom();
@@ -155,7 +169,7 @@
   }
   function stopJob(){
     if(!job)return;
-    const old=job;job=null;old.ctrl.abort();paneelRekenkern.cancel(old.id);old.detach?.();
+    const old=job;job=null;old.ctrl.abort();
   }
   function startMotion(){
     lastError="";stopJob();stopAnimation();finishEdit();
@@ -169,7 +183,10 @@
 
   async function tileBitmap(z,x,y,signal){
     const key=z+"/"+x+"/"+y;
-    if(tileCache.has(key))return tileCache.get(key);
+    if(tileCache.has(key)){
+      const bitmap=tileCache.get(key);
+      tileCache.delete(key); tileCache.set(key,bitmap); return bitmap;
+    }
     const a=map.unproject([x*256,(y+1)*256],z),b=map.unproject([(x+1)*256,y*256],z);
     if(!coverage.intersects(L.latLngBounds(a,b)))return null;
     for(let attempt=0;attempt<2;attempt++){
@@ -191,29 +208,29 @@
       }finally{clearTimeout(deadline);signal.removeEventListener("abort",abort);}
     }
   }
-  async function snapshot(p,v,j){
-    const canvas=document.createElement("canvas");canvas.width=p.width;canvas.height=p.height;
-    const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.fillStyle="white";ctx.fillRect(0,0,p.width,p.height);
+  async function detailPhoto(block, signal, progress) {
+    const size=deelscan.size, canvas=document.createElement("canvas");
+    canvas.width=size; canvas.height=size;
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});
+    ctx.fillStyle="white"; ctx.fillRect(0,0,size,size);
     const tiles=[];
-    for(let y=Math.floor(p.top/256);y<Math.ceil((p.top+p.height)/256);y++)for(let x=Math.floor(p.left/256);x<Math.ceil((p.left+p.width)/256);x++)tiles.push([x,y]);
+    for (let y=Math.floor(block.top/256);y<Math.ceil((block.top+size)/256);y++) {
+      for (let x=Math.floor(block.left/256);x<Math.ceil((block.left+size)/256);x++) tiles.push([x,y]);
+    }
     let pos=0,done=0;
     await Promise.all(Array.from({length:Math.min(7,tiles.length)},async()=>{
-      while(pos<tiles.length){
-        const [x,y]=tiles[pos++];const bmp=await tileBitmap(dataZoom,x,y,j.ctrl.signal);
-        if(job!==j)throw new DOMException("Afgebroken","AbortError");
-        if(bmp)ctx.drawImage(bmp,x*256-p.left,y*256-p.top);
-        $("progress").value=.16*(++done/tiles.length);
+      while(pos<tiles.length) {
+        signal.throwIfAborted();
+        const [x,y]=tiles[pos++];
+        const bmp=await tileBitmap(dataZoom,x,y,signal);
+        signal.throwIfAborted();
+        if (bmp) ctx.drawImage(bmp,x*256-block.left,y*256-block.top);
+        progress(++done/tiles.length);
       }
     }));
-    const rgba=ctx.getImageData(0,0,p.width,p.height).data;
-    const bounds=[v[0]-p.left,v[1]-p.top,v[2]-p.left,v[3]-p.top];
-    let empty=0,total=0;
-    for(let y=Math.max(0,Math.floor(bounds[1]));y<bounds[3];y+=4)for(let x=Math.max(0,Math.floor(bounds[0]));x<bounds[2];x+=4){
-      const i=(y*p.width+x)*4;total++;
-      if(rgba[i]>=249&&rgba[i+1]>=249&&rgba[i+2]>=249)empty++;
-    }
-    if(!total || empty/total>.993)throw new Error("PDOK heeft hier geen bruikbare luchtfoto. Kies een plek binnen Nederland.");
-    return {raw:rgba.buffer,bounds,partial:empty/total>.04};
+    const rgba=ctx.getImageData(0,0,size,size).data;
+    canvas.width=canvas.height=0;
+    return rgba;
   }
 
   function animateResult(){
@@ -231,45 +248,58 @@
     a.frame=requestAnimationFrame(step);
   }
   async function countHere(){
-    if(job){stopJob();lastError="Telling geannuleerd.";updateUI();return;}
-    const v=view(),p=plan(v);
-    if(map.getZoom()<18.99||p.nx*p.ny>limit)return;
-    lastError="";stopAnimation();finishEdit();
-    const j={id:++serial,ctrl:new AbortController()};job=j;visible=[];
-    showTotal(null);updateUI();$("progress").value=0;$("status").textContent="Luchtfoto voor dit kaartbeeld ophalen…";
-    try{
-      const snap=await snapshot(p,v,j);if(job!==j)return;
-      $("status").textContent="Paneelherkenner starten…";
-      const engine=await paneelRekenkern.ready();if(job!==j)return;
-      const metres=156543.03392804097*Math.cos(map.getCenter().lat*Math.PI/180)/2**dataZoom;
-      const message=e=>{
-        const m=e.data;
-        if(m.id!==j.id||job!==j)return;
-        if(m.kind==="progress"){
-          $("progress").value=.17+.76*m.done/m.total;
-          $("status").textContent="Daken analyseren… "+Math.round(100*m.done/m.total)+"%";
-        } else if(m.kind==="refine"){
-          $("progress").value=.95;$("status").textContent="Paneelranden op de luchtfoto bepalen…";
-        } else if(m.kind==="error"){fail(new Error("De beeldherkenning is onderbroken. Probeer opnieuw of zoom een stap verder in."));}
-        else if(m.kind==="result"){
-          j.detach();job=null;
-          last={bounds:v,partial:snap.partial,panels:m.panels.map(box=>({
-            center:[box.center[0]+p.left,box.center[1]+p.top],
-            points:box.points.map(q=>[q[0]+p.left,q[1]+p.top])
-          }))};
-          visible=currentResults(v);animateResult();
+    if (job) { stopJob(); lastError="Telling geannuleerd."; updateUI(); return; }
+    const bounds=view(), plan=deelscan.plan(bounds);
+    if (map.getZoom()<minScanZoom || plan.count>limit) return;
+    lastError=""; stopAnimation(); finishEdit();
+    const j={id:++serial,ctrl:new AbortController(),block:null};
+    const signal=j.ctrl.signal;
+    job=j; visible=[]; showTotal(null); updateUI(); $("progress").value=0;
+    let index=0, valid=0, sampled=0;
+    const boxes=[];
+    function show(stage,fraction) {
+      if (job!==j) return;
+      $("status").textContent="Deelgebied "+(index+1)+" van "+plan.count+" · "+stage;
+      $("progress").value=(index+fraction)/plan.count;
+    }
+    try {
+      for (const block of deelscan.blocks(plan)) {
+        signal.throwIfAborted();
+        j.block=block; requestDrawing();
+        let found=blockCache.get(block.key);
+        if (!found) {
+          show("detailfoto ophalen",0);
+          const pixels=await detailPhoto(block,signal,n=>show("detailfoto ophalen",.17*n));
+          const mask=deelscan.coverage(pixels);
+          let panels=[];
+          if (mask.includes(1)) {
+            const mid=map.unproject([block.left+deelscan.size/2,block.top+deelscan.size/2],dataZoom);
+            const metres=156543.03392804097*Math.cos(mid.lat*Math.PI/180)/2**dataZoom;
+            show("daken onderzoeken",.17);
+            const local=await paneelRekenkern.runBlock({id:j.id,size:deelscan.size,margin:deelscan.margin,
+              overlap:deelscan.overlap,metres,raw:pixels.buffer},signal,m=>{
+              if (m.kind==="progress") show("daken onderzoeken",.17+.72*m.done/m.total);
+              else if (m.kind==="refine") show("paneelranden volgen",.92);
+            });
+            panels=local.map(box=>deelscan.locate(box,block));
+          }
+          signal.throwIfAborted();
+          found={mask,panels};
+          blockCache.set(block.key,found);
+          if (blockCache.size>120) blockCache.delete(blockCache.keys().next().value);
         }
-      };
-      const failure=()=>{paneelRekenkern.reset();fail(new Error("De herkenner is gestopt. Zoom een stap in en probeer opnieuw."));};
-      const fail=err=>{if(job!==j)return;stopJob();lastError=err.message;updateUI();};
-      j.detach=()=>{engine.removeEventListener("message",message);engine.removeEventListener("error",failure);};
-      engine.addEventListener("message",message);engine.addEventListener("error",failure);
-      $("status").textContent="Daken analyseren…";$("progress").value=.17;
-      engine.postMessage({kind:"run",id:j.id,width:p.width,height:p.height,nx:p.nx,ny:p.ny,gridX:p.gridX,gridY:p.gridY,
-        bounds:snap.bounds,raw:snap.raw,metres},[snap.raw]);
-    }catch(err){
-      if(job!==j)return;
-      stopJob();lastError=err.message||"De telling is mislukt. Probeer opnieuw.";updateUI();
+        const coverage=deelscan.visibleCoverage(block,found.mask,bounds);
+        valid+=coverage.valid; sampled+=coverage.total;
+        boxes.push(...found.panels);
+        index++;
+      }
+      signal.throwIfAborted();
+      if (!sampled || valid/sampled<.007) throw new Error("PDOK heeft hier geen bruikbare luchtfoto. Kies een plek binnen Nederland.");
+      last={bounds,partial:valid/sampled<.96,panels:deelscan.merge(boxes)};
+      job=null; visible=currentResults(bounds); animateResult();
+    } catch (error) {
+      if (job!==j) return;
+      stopJob(); lastError=error.message||"De telling is mislukt. Probeer opnieuw."; updateUI();
     }
   }
   $("count").onclick=countHere;
