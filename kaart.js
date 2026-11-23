@@ -69,7 +69,7 @@
         map.setView(center,zoom,{animate:false});return;
       }
     }
-    home();
+    map.setView([52.42700,6.07361],20,{animate:false});
   }
   openMap();layerState();
   $("home").onclick=home;$("zoomIn").onclick=()=>map.zoomIn();$("zoomOut").onclick=()=>map.zoomOut();
